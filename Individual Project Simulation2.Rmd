@@ -1,6 +1,6 @@
 ---
 title: "Individual Project Simulation 2"
-author: "Ji Yueyi 3035492903"
+author: "Elaine Ji"
 date: "11/26/2020"
 output: html_document
 ---
