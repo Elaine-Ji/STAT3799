@@ -1,0 +1,800 @@
+---
+title: "Individual Project Final"
+author: "Ji Yueyi 3035492903"
+date: "11/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load required packages
+```{r}
+library(readr)
+library(glmnet)
+library(knockoff)
+library(ggplot2)
+library(reshape2)
+```
+
+## Load the original data set
+```{r}
+setwd('/Users/Elaine/Desktop/STAT3799')
+data <- read_delim("GSE3330-GPL340.txt", delim = "\t")
+sum(is.na(data))
+```
+
+## simulation 1: p=20,k=10,nIteration=20
+```{r}
+nIterations = 20
+set.seed(1)
+fdp_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),20),]
+  data3 <- data2[,-1]
+  n=60; p=20; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 20)
+  nonzeros <- rnorm(10, 1, 1)
+  #50 non-zero factor
+  id <- sample(1:20,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  #glmnet lasso 
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  #selected important genes
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  #false discovery proportion
+  fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))	
+  fdp(lasso_sel)
+})
+fdp_list_lasso
+mean(fdp_list_lasso) ### 0.3760146
+lasso_fdp <- c(mean(fdp_list_lasso))
+```
+
+```{r}
+nIterations = 20
+set.seed(1)
+power_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),20),]
+  data3 <- data2[,-1]
+  n=60; p=20; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 20)
+  nonzeros <- rnorm(10, 1, 1)
+  #50 non-zero factor
+  id <- sample(1:20,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  #glmnet lasso 
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  #selected important genes
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  #power
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(lasso_sel)
+})
+power_list_lasso
+mean(power_list_lasso)  ###0.755
+lasso_power <- c(mean(power_list_lasso))
+```
+
+```{r}
+Sigma <- diag(1,20)
+diag_s = create.solve_asdp(Sigma)
+
+# Compute the fdp over 20 iterations 
+nIterations = 20
+set.seed(1)
+fdp_list_knockoff = sapply(1:nIterations, function(it) {
+  # Run the knockoff filter manually, using the pre-computed value of diag_s
+  data2 <- data[sample(1:(nrow(data)-3),20),]
+  data3 <- data2[,-1]
+  n=60; p=20; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 20)
+  nonzeros <- rnorm(10, 1, 1)
+  #50 non-zero factor
+  id <- sample(1:20,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  # Compute and store the fdp
+  fdp = function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+  fdp(selected)
+})
+
+fdp_list_knockoff
+# Estimate the FDR
+mean(fdp_list_knockoff) ###0.09680916
+knockoff_fdp <- c(mean(fdp_list_knockoff))
+```
+
+```{r}
+nIterations = 20
+set.seed(1)
+power_list_knockoff = sapply(1:nIterations, function(it) {
+  # Run the knockoff filter manually, using the pre-computed value of diag_s
+  data2 <- data[sample(1:(nrow(data)-3),20),]
+  data3 <- data2[,-1]
+  n=60; p=20; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 20)
+  nonzeros <- rnorm(10, 1, 1)
+  #50 non-zero factor
+  id <- sample(1:20,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(selected)
+})
+
+power_list_knockoff
+# Estimate the POWER
+mean(power_list_knockoff) ###0.67
+knockoff_power <- c(mean(power_list_knockoff))
+```
+
+## simulation 2: p=50,k=10,nIteration=20
+```{r}
+nIterations = 20
+set.seed(2)
+fdp_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),50),]
+  data3 <- data2[,-1]
+  n=60; p=50; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 50)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:50,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))	
+  fdp(lasso_sel)
+})
+fdp_list_lasso
+mean(fdp_list_lasso) ### 0.5991242
+lasso_fdp[2] <- c(mean(fdp_list_lasso))
+```
+
+```{r}
+nIterations = 20
+set.seed(2)
+power_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),50),]
+  data3 <- data2[,-1]
+  n=60; p=50; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 50)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:50,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(lasso_sel)
+})
+power_list_lasso
+mean(power_list_lasso)  ###0.745
+lasso_power[2] <- c(mean(power_list_lasso))
+```
+
+```{r}
+Sigma <- diag(1,50)
+diag_s = create.solve_asdp(Sigma)
+nIterations = 20
+set.seed(2)
+fdp_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),50),]
+  data3 <- data2[,-1]
+  n=60; p=50; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 50)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:50,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  fdp = function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+  fdp(selected)
+})
+fdp_list_knockoff
+mean(fdp_list_knockoff) ###0.1923647
+knockoff_fdp[2] <- c(mean(fdp_list_knockoff))
+```
+
+```{r}
+nIterations = 20
+set.seed(2)
+power_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),50),]
+  data3 <- data2[,-1]
+  n=60; p=50; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 50)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:50,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(selected)
+})
+power_list_knockoff
+mean(power_list_knockoff) ###0.57
+knockoff_power[2] <- c(mean(power_list_knockoff))
+```
+
+## simulation 3: p=100,k=10,nIteration=20
+```{r}
+nIterations = 20
+set.seed(31)
+fdp_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),100),]
+  data3 <- data2[,-1]
+  n=60; p=100; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 100)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:100,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))	
+  fdp(lasso_sel)
+})
+fdp_list_lasso
+mean(fdp_list_lasso) ### 0.7254332
+lasso_fdp[3] <- c(mean(fdp_list_lasso))
+```
+
+```{r}
+nIterations = 20
+set.seed(31)
+power_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),100),]
+  data3 <- data2[,-1]
+  n=60; p=100; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 100)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:100,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(lasso_sel)
+})
+power_list_lasso
+mean(power_list_lasso)  ###0.71
+lasso_power[3] <- c(mean(power_list_lasso))
+```
+
+```{r}
+Sigma <- diag(1,100)
+diag_s = create.solve_asdp(Sigma)
+nIterations = 20
+set.seed(31)
+fdp_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),100),]
+  data3 <- data2[,-1]
+  n=60; p=100; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 100)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:100,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  fdp = function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+  fdp(selected)
+})
+fdp_list_knockoff
+mean(fdp_list_knockoff) ###0.25126
+knockoff_fdp[3] <- c(mean(fdp_list_knockoff))
+```
+
+```{r}
+nIterations = 20
+set.seed(31)
+power_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),100),]
+  data3 <- data2[,-1]
+  n=60; p=100; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 100)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:100,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(selected)
+})
+power_list_knockoff
+mean(power_list_knockoff) ###0.54
+knockoff_power[3] <- c(mean(power_list_knockoff))
+```
+
+## simulation 4: p=200,k=10,nIteration=20
+```{r}
+nIterations = 20
+set.seed(41)
+fdp_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),200),]
+  data3 <- data2[,-1]
+  n=60; p=200; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 200)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:200,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))	
+  fdp(lasso_sel)
+})
+fdp_list_lasso
+mean(fdp_list_lasso) ### 0.7461741
+lasso_fdp[4] <- c(mean(fdp_list_lasso))
+```
+
+```{r}
+nIterations = 20
+set.seed(41)
+power_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),200),]
+  data3 <- data2[,-1]
+  n=60; p=200; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 200)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:200,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(lasso_sel)
+})
+power_list_lasso
+mean(power_list_lasso)  ###0.685
+lasso_power[4] <- c(mean(power_list_lasso))
+```
+
+```{r}
+Sigma <- diag(1,200)
+diag_s = create.solve_asdp(Sigma)
+nIterations = 20
+set.seed(41)
+fdp_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),200),]
+  data3 <- data2[,-1]
+  n=60; p=200; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 200)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:200,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  fdp = function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+  fdp(selected)
+})
+fdp_list_knockoff
+mean(fdp_list_knockoff) ###0.3813744
+knockoff_fdp[4] <- c(mean(fdp_list_knockoff))
+```
+
+```{r}
+nIterations = 20
+set.seed(41)
+power_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),200),]
+  data3 <- data2[,-1]
+  n=60; p=200; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 200)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:200,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(selected)
+})
+power_list_knockoff
+mean(power_list_knockoff) ###0.48
+knockoff_power[4] <- c(mean(power_list_knockoff))
+```
+
+## simulation 5: p=500,k=10,nIteration=20
+```{r}
+nIterations = 20
+set.seed(0)
+fdp_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),500),]
+  data3 <- data2[,-1]
+  n=60; p=500; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 500)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:500,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))	
+  fdp(lasso_sel)
+})
+fdp_list_lasso
+mean(fdp_list_lasso) ### 0.8044768
+lasso_fdp[5] <- c(mean(fdp_list_lasso))
+```
+
+```{r}
+nIterations = 20
+set.seed(0)
+power_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),500),]
+  data3 <- data2[,-1]
+  n=60; p=500; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 500)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:500,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(lasso_sel)
+})
+power_list_lasso
+mean(power_list_lasso)  ###0.64
+lasso_power[5] <- c(mean(power_list_lasso))
+```
+
+```{r}
+Sigma <- diag(1,500)
+diag_s = create.solve_asdp(Sigma)
+nIterations = 20
+set.seed(0)
+fdp_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),500),]
+  data3 <- data2[,-1]
+  n=60; p=500; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 500)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:500,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  fdp = function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+  fdp(selected)
+})
+fdp_list_knockoff
+mean(fdp_list_knockoff) ###0.4838127
+knockoff_fdp[5] <- c(mean(fdp_list_knockoff))
+```
+
+```{r}
+nIterations = 20
+set.seed(0)
+power_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),500),]
+  data3 <- data2[,-1]
+  n=60; p=500; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 500)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:500,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(selected)
+})
+power_list_knockoff
+mean(power_list_knockoff) ###0.43
+knockoff_power[5] <- c(mean(power_list_knockoff))
+```
+
+## simulation 6: p=1000,k=10,nIteration=20
+```{r}
+nIterations = 20
+set.seed(61)
+fdp_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),1000),]
+  data3 <- data2[,-1]
+  n=60; p=1000; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 1000)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:1000,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  fdp <- function(selected) sum(beta[selected] == 0) / max(1, length(selected))	
+  fdp(lasso_sel)
+})
+fdp_list_lasso
+mean(fdp_list_lasso) ### 0.8320061
+lasso_fdp[6] <- c(mean(fdp_list_lasso))
+```
+
+```{r}
+nIterations = 20
+set.seed(61)
+power_list_lasso = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),1000),]
+  data3 <- data2[,-1]
+  n=60; p=1000; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 1000)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:1000,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  cv.model <- cv.glmnet(X,y,alpha = 1,intercept=FALSE)
+  model <- coef(cv.model, cv.model$lambda.min)
+  selected <- model[model[,1] !=0,1]
+  selected_names <- names(selected)
+  lasso_sel <- as.numeric(gsub("V","",selected_names[-1]))
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(lasso_sel)
+})
+power_list_lasso
+mean(power_list_lasso)  ###0.61
+lasso_power[6] <- c(mean(power_list_lasso))
+```
+
+```{r}
+Sigma <- diag(1,1000)
+diag_s = create.solve_asdp(Sigma)
+nIterations = 20
+set.seed(61)
+fdp_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),1000),]
+  data3 <- data2[,-1]
+  n=60; p=1000; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 1000)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:1000,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  fdp = function(selected) sum(beta[selected] == 0) / max(1, length(selected))
+  fdp(selected)
+})
+fdp_list_knockoff
+mean(fdp_list_knockoff) ###0.5060806
+knockoff_fdp[6] <- c(mean(fdp_list_knockoff))
+```
+
+```{r}
+nIterations = 20
+set.seed(61)
+power_list_knockoff = sapply(1:nIterations, function(it) {
+  data2 <- data[sample(1:(nrow(data)-3),1000),]
+  data3 <- data2[,-1]
+  n=60; p=1000; k=10
+  X <- scale(as.matrix(t(data3)))
+  beta <- rep(0, 1000)
+  nonzeros <- rnorm(10, 1, 1)
+  id <- sample(1:1000,10)
+  beta[id] <- nonzeros
+  error <- rnorm(60,0,1)
+  y <- X %*% beta + error
+  mu <- colMeans(X)
+  X_k = create.gaussian(X, mu, Sigma, diag_s=diag_s)
+  W = stat.glmnet_lambdasmax(X, X_k, y)
+  t = knockoff.threshold(W, fdr=0.2, offset=1)
+  selected = which(W >= t)
+  trueDiscoveries <- function(selected) (sum(beta[selected]>0));
+  power <- function(selected) (trueDiscoveries(selected)/k);
+  power(selected)
+})
+power_list_knockoff
+mean(power_list_knockoff) ###0.35
+knockoff_power[6] <- c(mean(power_list_knockoff))
+```
+
+```{r}
+tab1<- data.frame(
+  Simulation_id = c(1:6),
+  p = c(20, 50, 100, 200, 500, 1000),
+  k = c(10),
+  stringsAsFactors = FALSE)
+```
+
+```{r}
+tab1$lasso_FDR <- lasso_fdp
+tab1$lasso_power <- lasso_power
+tab1$knockoff_FDR <- knockoff_fdp
+tab1$knockoff_power <- knockoff_power
+tab1
+```
+## table of fdp comparison
+```{r}
+tab2 <- data.frame(
+  Simulation_id = c(1:6),
+  stringsAsFactors = FALSE)
+```
+
+```{r}
+tab2$lasso_FDR <- lasso_fdp
+tab2$knockoff_FDR <- knockoff_fdp
+tab2
+tab2_plot <- melt(tab2, id.vars = 'Simulation_id', variable.name = "Selection_method", value.name = "FDR")
+ggplot(tab2_plot, aes(Simulation_id , FDR)) + geom_line(aes(colour = Selection_method))
+```
+
+## table of power comparison
+```{r}
+tab3 <- data.frame(
+  Simulation_id = c(1:6),
+  stringsAsFactors = FALSE)
+```
+
+```{r}
+tab3$lasso_power <- lasso_power
+tab3$knockoff_power <- knockoff_power
+tab3
+tab3_plot <- melt(tab3, id.vars = 'Simulation_id', variable.name = "Selection_method", value.name = "Power")
+ggplot(tab3_plot, aes(Simulation_id , Power)) + geom_line(aes(colour = Selection_method))
+```
+
+## Real Data Analysis
+```{r}
+#lasso for SCD1 the first response
+data1 <- data[c(1:22577),]
+x1 <- t(as.matrix(data1[-nrow(data1),-1]))
+colnames(x1) <- as.character(data.frame(data[c(1:22576),1])[,1])
+y1 <- as.matrix(data1[nrow(data1),-1])
+#y1 <- as.numeric(data1[nrow(data1),-1])
+set.seed(10)
+cv.model1 <- cv.glmnet(x1,y1,alpha = 1)
+plot(cv.model1)
+model1 <- coef(cv.model1, cv.model1$lambda.min)
+plot(model1)
+```
+
+```{r}
+#selected important genes
+selected1 <- model1[model1[,1] !=0,1]
+selected1 
+```
+```{r}
+selected1_names <- names(selected1)
+selected1_names[-1]
+```
+
+```{r}
+#using knockoff
+result1 = knockoff.filter(x1[,selected1_names[-1]], y1)
+selected1_names_knockoff <- names(result1$selected)
+selected1_names_knockoff
+```
